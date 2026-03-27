@@ -1,0 +1,27 @@
+{
+  "default_provider": "mimo",
+  "providers": {
+    "mimo": {
+      "name": "小米MiMo",
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "auth_header": "api-key",
+      "api_key": "YOUR_MIIMO_API_KEY_HERE",
+      "model": "mimo-v2-tts",
+      "voices": [
+        "mimo_default",
+        "default_zh",
+        "default_en"
+      ],
+      "default_voice": "mimo_default",
+      "format": "wav",
+      "supports_style": true,
+      "style_position": "prefix",
+      "build_messages": "mimo",
+      "extract_audio": "mimo"
+    }
+  },
+  "output_dir": "/tmp/openclaw",
+  "output_wav": "tts-output.wav",
+  "output_opus": "tts-output.opus",
+  "opus_bitrate": "32k"
+}
