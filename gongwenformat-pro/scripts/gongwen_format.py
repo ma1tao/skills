@@ -127,40 +127,57 @@ def add_attachment(doc, attachment_text):
     return p
 
 
+def _build_footer_xml(alignment):
+    """构建页脚段落XML：—页码—，四号宋体"""
+    return (
+        f'<w:p {nsdecls("w")}>'
+        f'<w:pPr><w:jc w:val="{alignment}"/></w:pPr>'
+        f'<w:r><w:rPr>'
+        f'<w:rFonts w:ascii="{FONT_SONGTI}" w:hAnsi="{FONT_SONGTI}" w:eastAsia="{FONT_SONGTI}"/>'
+        f'<w:sz w:val="28"/><w:szCs w:val="28"/>'
+        f'</w:rPr><w:t>\u2014</w:t></w:r>'
+        f'<w:fldSimple w:instr=" PAGE "><w:r><w:rPr>'
+        f'<w:rFonts w:ascii="{FONT_SONGTI}" w:hAnsi="{FONT_SONGTI}" w:eastAsia="{FONT_SONGTI}"/>'
+        f'<w:sz w:val="28"/><w:szCs w:val="28"/>'
+        f'</w:rPr><w:t>1</w:t></w:r></w:fldSimple>'
+        f'<w:r><w:rPr>'
+        f'<w:rFonts w:ascii="{FONT_SONGTI}" w:hAnsi="{FONT_SONGTI}" w:eastAsia="{FONT_SONGTI}"/>'
+        f'<w:sz w:val="28"/><w:szCs w:val="28"/>'
+        f'</w:rPr><w:t>\u2014</w:t></w:r>'
+        f'</w:p>'
+    )
+
+
 def add_page_number(doc):
-    """添加页码：四号宋体，-1- 格式，居中"""
+    """添加页码：四号宋体，—1— 格式，单页居右、双页居左"""
+    # 启用奇偶页不同
+    docSettings = doc.settings.element
+    if docSettings.find(qn('w:evenAndOddHeaders')) is None:
+        docSettings.append(parse_xml(f'<w:evenAndOddHeaders {nsdecls("w")}/>'))
+
     for section in doc.sections:
-        footer = section.footer
-        footer.is_linked_to_previous = False
-        for p in footer.paragraphs:
-            p.clear()
-        p = footer.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        sectPr = section._sectPr
 
-        # 左横线
-        dash1 = p.add_run('-')
-        _set_songti(dash1)
+        # 清空默认footer
+        default_footer = sectPr.find(qn('w:footerReference'))
 
-        # PAGE 域
-        r_begin = p.add_run()
-        r_begin._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="begin"/>'))
-        _set_songti(r_begin)
+        # 奇数页footer（居右）
+        odd_footer = sectPr.find(qn('w:oddFooter'))
+        if odd_footer is None:
+            odd_footer = parse_xml(f'<w:oddFooter {nsdecls("w")}/>')
+            sectPr.append(odd_footer)
+        for child in list(odd_footer):
+            odd_footer.remove(child)
+        odd_footer.append(parse_xml(_build_footer_xml('right')))
 
-        r_instr = p.add_run()
-        r_instr._element.append(parse_xml(f'<w:instrText {nsdecls("w")} xml:space="preserve"> PAGE </w:instrText>'))
-        _set_songti(r_instr)
-
-        r_sep = p.add_run()
-        r_sep._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="separate"/>'))
-        _set_songti(r_sep)
-
-        r_end = p.add_run()
-        r_end._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'))
-        _set_songti(r_end)
-
-        # 右横线
-        dash2 = p.add_run('-')
-        _set_songti(dash2)
+        # 偶数页footer（居左）
+        even_footer = sectPr.find(qn('w:evenFooter'))
+        if even_footer is None:
+            even_footer = parse_xml(f'<w:evenFooter {nsdecls("w")}/>')
+            sectPr.append(even_footer)
+        for child in list(even_footer):
+            even_footer.remove(child)
+        even_footer.append(parse_xml(_build_footer_xml('left')))
         break
 
 
@@ -262,8 +279,9 @@ def main():
     parser.add_argument('--output', required=True, help='输出Word文件路径')
     parser.add_argument('--author', default='', help='发文机关名称')
     parser.add_argument('--date', default='', help='成文日期（自动格式化）')
-    parser.add_argument('--print-author', default='', help='印发机关')
+    parser.add_argument('--print-author', default='', help='印发机关（版记）')
     parser.add_argument('--print-date', default='', help='印发日期（自动格式化）')
+    parser.add_argument('--cc', default='', help='抄送机关（版记中）')
     args = parser.parse_args()
 
     content, _ = read_input(args.input)
@@ -301,9 +319,43 @@ def main():
             run = p.add_run(format_date(args.date))
             _set_run_font(run, FONT_FANGSONG, SIZE_SANHAO)
 
+    # 版记（新建分节，垂直对齐到底部，上下各一条反线）
     if args.print_author or args.print_date:
-        for _ in range(2):
-            doc.add_paragraph()
+        from docx.enum.section import WD_SECTION_START
+        new_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
+        set_page_layout(new_section)
+        # 垂直对齐到底部
+        new_section._sectPr.append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="bottom"/>'))
+
+        def _add_banji_para(text, alignment=WD_ALIGN_PARAGRAPH.LEFT, has_top_border=False, has_bottom_border=False):
+            p = doc.add_paragraph()
+            p.alignment = alignment
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            p.paragraph_format.line_spacing = Pt(28)
+            if text:
+                run = p.add_run(text)
+                _set_run_font(run, FONT_FANGSONG, SIZE_SANHAO)
+            if has_top_border or has_bottom_border:
+                pPr = p._element.get_or_add_pPr()
+                borders = []
+                if has_top_border:
+                    borders.append(f'<w:top w:val="single" w:sz="4" w:space="1" w:color="000000"/>')
+                if has_bottom_border:
+                    borders.append(f'<w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/>')
+                if borders:
+                    pBdr = parse_xml(f'<w:pBdr {nsdecls("w")}>{"".join(borders)}</w:pBdr>')
+                    pPr.append(pBdr)
+            return p
+
+        # 上反线
+        _add_banji_para('', has_bottom_border=True)
+        # 抄送机关
+        cc = getattr(args, 'cc', '')
+        if cc:
+            _add_banji_para(f'抄送：{cc}')
+        # 印发机关 + 印发日期
         print_text = ''
         if args.print_author and args.print_date:
             print_text = f'{args.print_author}            {format_date(args.print_date)}印发'
@@ -312,12 +364,9 @@ def main():
         elif args.print_date:
             print_text = f'{format_date(args.print_date)}印发'
         if print_text:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-            p.paragraph_format.line_spacing = Pt(28)
-            run = p.add_run(print_text)
-            _set_run_font(run, FONT_FANGSONG, SIZE_SANHAO)
+            _add_banji_para(print_text, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+        # 下反线
+        _add_banji_para('', has_top_border=True)
 
     add_page_number(doc)
 
