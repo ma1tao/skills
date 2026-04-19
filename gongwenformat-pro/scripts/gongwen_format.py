@@ -87,6 +87,70 @@ def _set_songti(run):
         rFonts.set(qn('w:eastAsia'), FONT_SONGTI)
 
 
+def add_redhead(doc, org_name, doc_number=''):  
+    """添加红头：发文机关标志 + 红色分隔线 + 发文字号"""
+    # 上边缘至版心上边缘为35mm，版心上边缘=上边距37mm，所以红头顶边距=37-35=2mm
+    # 通过段前间距控制：35mm ≈ 99pt（上边距已留37mm，再留35mm-字号高度的空间）
+    # 实际做法：让红头段落从页边距下方35mm-37mm处开始，用space_before控制
+
+    # 发文机关标志（红色小标宋，居中）
+    display_name = org_name
+    p_org = doc.add_paragraph()
+    p_org.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_org.paragraph_format.space_before = Pt(0)
+    p_org.paragraph_format.space_after = Pt(0)
+    p_org.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p_org.paragraph_format.line_spacing = Pt(40)
+    run_org = p_org.add_run(display_name)
+    # 字号根据名称字数自适应
+    name_len = len(display_name)
+    if name_len <= 6:
+        font_size = Pt(32)
+    elif name_len <= 10:
+        font_size = Pt(28)
+    elif name_len <= 15:
+        font_size = Pt(24)
+    else:
+        font_size = Pt(22)
+    _set_run_font(run_org, FONT_TITLE, font_size, bold=True)  # 方正小标宋简体
+    run_org.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  # 红色
+
+    # 发文字号（三号仿宋，居中）
+    if doc_number:
+        p_num = doc.add_paragraph()
+        p_num.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_num.paragraph_format.space_before = Pt(0)
+        p_num.paragraph_format.space_after = Pt(0)
+        p_num.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        p_num.paragraph_format.line_spacing = Pt(28)
+        run_num = p_num.add_run(doc_number)
+        _set_run_font(run_num, FONT_FANGSONG, SIZE_SANHAO)
+
+    # 红色分隔线（156mm宽）
+    p_line = doc.add_paragraph()
+    p_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_line.paragraph_format.space_before = Pt(0)
+    p_line.paragraph_format.space_after = Pt(0)
+    p_line.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p_line.paragraph_format.line_spacing = Pt(4)
+    pPr = p_line._element.get_or_add_pPr()
+    pBdr = parse_xml(
+        f'<w:pBdr {nsdecls("w")}>'
+        f'<w:bottom w:val="single" w:sz="24" w:space="1" w:color="FF0000"/>'
+        f'</w:pBdr>'
+    )
+    pPr.append(pBdr)
+    p_line.paragraph_format.left_indent = Cm(0)
+    p_line.paragraph_format.right_indent = Cm(0)
+
+    # 分隔线与标题之间空一行
+    spacer = doc.add_paragraph()
+    spacer.paragraph_format.space_before = Pt(0)
+    spacer.paragraph_format.space_after = Pt(0)
+    spacer.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    spacer.paragraph_format.line_spacing = Pt(28)
+
+
 def add_title(doc, title_text):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -155,31 +219,65 @@ def add_page_number(doc):
     if docSettings.find(qn('w:evenAndOddHeaders')) is None:
         docSettings.append(parse_xml(f'<w:evenAndOddHeaders {nsdecls("w")}/>'))
 
+    # 清理所有 section 的 footer
     for section in doc.sections:
         sectPr = section._sectPr
+        for ref in list(sectPr.findall(qn('w:footerReference'))):
+            sectPr.remove(ref)
+        for tag in ['w:oddFooter', 'w:evenFooter']:
+            for el in list(sectPr.findall(qn(tag))):
+                sectPr.remove(el)
+        section.footer.is_linked_to_previous = True
 
-        # 清空默认footer
-        default_footer = sectPr.find(qn('w:footerReference'))
+    # 第一个 section：奇数页页码（居右）
+    s = doc.sections[0]
+    s.footer.is_linked_to_previous = False
+    p_odd = s.footer.paragraphs[0]
+    p_odd.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for run in list(p_odd.runs):
+        p_odd._element.remove(run._element)
+    r1 = p_odd.add_run('\u2014')
+    r1.font.name = FONT_SONGTI
+    r1.font.size = SIZE_SIHAO
+    r2 = p_odd.add_run()
+    r2.font.name = FONT_SONGTI
+    r2.font.size = SIZE_SIHAO
+    r2._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="begin"/>'))
+    r2._element.append(parse_xml(f'<w:instrText {nsdecls("w")} xml:space="preserve"> PAGE </w:instrText>'))
+    r2._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'))
+    r3 = p_odd.add_run('\u2014')
+    r3.font.name = FONT_SONGTI
+    r3.font.size = SIZE_SIHAO
 
-        # 奇数页footer（居右）
-        odd_footer = sectPr.find(qn('w:oddFooter'))
-        if odd_footer is None:
-            odd_footer = parse_xml(f'<w:oddFooter {nsdecls("w")}/>')
-            sectPr.append(odd_footer)
-        for child in list(odd_footer):
-            odd_footer.remove(child)
-        odd_footer.append(parse_xml(_build_footer_xml('right')))
+    # 第一个 section：偶数页页码（居左）
+    even_footer = s.even_page_footer
+    even_footer.is_linked_to_previous = False
+    p_even = even_footer.paragraphs[0]
+    p_even.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r4 = p_even.add_run('\u2014')
+    r4.font.name = FONT_SONGTI
+    r4.font.size = SIZE_SIHAO
+    r5 = p_even.add_run()
+    r5.font.name = FONT_SONGTI
+    r5.font.size = SIZE_SIHAO
+    r5._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="begin"/>'))
+    r5._element.append(parse_xml(f'<w:instrText {nsdecls("w")} xml:space="preserve"> PAGE </w:instrText>'))
+    r5._element.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'))
+    r6 = p_even.add_run('\u2014')
+    r6.font.name = FONT_SONGTI
+    r6.font.size = SIZE_SIHAO
 
-        # 偶数页footer（居左）
-        even_footer = sectPr.find(qn('w:evenFooter'))
-        if even_footer is None:
-            even_footer = parse_xml(f'<w:evenFooter {nsdecls("w")}/>')
-            sectPr.append(even_footer)
-        for child in list(even_footer):
-            even_footer.remove(child)
-        even_footer.append(parse_xml(_build_footer_xml('left')))
-        break
-
+    # 版记 section（最后一个）不设页码，保持 linked_to_previous=False 但内容清空
+    if len(doc.sections) > 1:
+        last = doc.sections[-1]
+        last.footer.is_linked_to_previous = False
+        last.even_page_footer.is_linked_to_previous = False
+        for p in last.footer.paragraphs:
+            for run in list(p.runs):
+                p._element.remove(run._element)
+        for p in last.even_page_footer.paragraphs:
+            for run in list(p.runs):
+                p._element.remove(run._element)
 
 # ========== 输入格式处理 ==========
 
@@ -282,12 +380,19 @@ def main():
     parser.add_argument('--print-author', default='', help='印发机关（版记）')
     parser.add_argument('--print-date', default='', help='印发日期（自动格式化）')
     parser.add_argument('--cc', default='', help='抄送机关（版记中）')
+    parser.add_argument('--redhead', default='', help='红头机关名称（如 XX省人民政府）')
+    parser.add_argument('--doc-number', default='', help='发文字号（如 X政发〔2026〕X号）')
     args = parser.parse_args()
 
     content, _ = read_input(args.input)
 
     doc = Document()
-    set_page_layout(doc.sections[0])
+    section = doc.sections[0]
+    set_page_layout(section)
+
+    # 红头（在标题之前）
+    if args.redhead:
+        add_redhead(doc, args.redhead, args.doc_number)
 
     add_title(doc, args.title)
 
