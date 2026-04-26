@@ -178,17 +178,95 @@ def add_body_paragraph(doc, text, level=0):
     return p
 
 
-def add_attachment(doc, attachment_text):
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(0)
-    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(28)
-    p.paragraph_format.first_line_indent = Cm(1.13)
-    run = p.add_run(f'附件：{attachment_text}')
-    _set_run_font(run, FONT_FANGSONG, SIZE_SANHAO)
-    return p
+def add_attachment_block(doc, lines):
+    """添加附件说明块（GB/T 9704-2012 §7.3.4）。
+    规范要求：
+    - 正文下空一行
+    - 左空二字编排（首行缩进2字符）
+    - 多个附件每行一个，每个附件名称后不加标点
+    - 续行（第2个附件起）与第一个附件名称左对齐
+    """
+    if not lines:
+        return
+    # 正文下空一行
+    spacer = doc.add_paragraph()
+    spacer.paragraph_format.space_before = Pt(0)
+    spacer.paragraph_format.space_after = Pt(0)
+    spacer.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    spacer.paragraph_format.line_spacing = Pt(28)
+
+    for i, line in enumerate(lines):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        p.paragraph_format.line_spacing = Pt(28)
+        # 国标：左空二字 = 首行缩进2字符
+        if i == 0:
+            # 第一行「附件：1. xxx」左空二字
+            p.paragraph_format.first_line_indent = Cm(1.13)
+        else:
+            # 续行：与「附件」后的内容对齐，即左空二字+「附件：」宽度
+            # 「附件：」= 2个中文字+1个全角冒号 = 3字符 ≈ Cm(1.13) + Cm(0.85)
+            # 简化：直接左空二字，前面手动补缩进用空格
+            p.paragraph_format.first_line_indent = Cm(1.13)
+            # 在行首加空格对齐到「附件：」之后
+            line = '　　' + line  # 用2个全角空格模拟对齐
+        run = p.add_run(line)
+        _set_run_font(run, FONT_FANGSONG, SIZE_SANHAO)
+
+
+def _parse_attachment_content(text):
+    """解析附件冒号后的内容，智能拆分为多行。
+    '1. xxx  2. xxx' -> ['附件：1. xxx', '2. xxx']
+    '关于XXX的通知'   -> ['附件：关于XXX的通知']
+    注意：附件名称后不加标点符号（国标要求）
+    """
+    text = text.strip()
+    # 去除附件名称末尾的标点
+    text = re.sub(r'[；;，,。.！!？?]+$', '', text)
+    if not text:
+        return ['附件：（见附件）']
+    # 检测多个编号项
+    items = re.findall(r'(\d+[\.．][\s\S]*?)(?=\s+\d+[\.．]|$)', text)
+    if items and len(items) > 1:
+        lines = []
+        for j, item in enumerate(items):
+            item = item.strip()
+            item = re.sub(r'[；;，,。.！!？?]+$', '', item)  # 去末尾标点
+            if j == 0:
+                lines.append(f'附件：{item}')
+            else:
+                lines.append(item)
+        return lines
+    return [f'附件：{text}']
+
+
+def _parse_attachment_lines(lines, start_idx):
+    """从 start_idx 解析附件块，返回 (attachment_lines, next_idx)。
+    识别续行：缩进行、数字编号行、附件N：行。
+    """
+    result = [lines[start_idx]]
+    idx = start_idx + 1
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if not stripped:
+            idx += 1
+            continue
+        is_cont = (
+            lines[idx].startswith('  ') or
+            lines[idx].startswith('\t') or
+            re.match(r'^\s*\d+[\.．〔〕]', stripped) or
+            re.match(r'^附件\d+[：:]', stripped)
+        )
+        if is_cont:
+            cleaned = re.sub(r'^\s{1,2}', '', stripped)
+            result.append(cleaned)
+            idx += 1
+        else:
+            break
+    return result, idx
 
 
 def _build_footer_xml(alignment):
@@ -212,12 +290,18 @@ def _build_footer_xml(alignment):
     )
 
 
-def add_page_number(doc):
-    """添加页码：四号宋体，—1— 格式，单页居右、双页居左"""
+def add_page_number(doc, skip_first=False):
+    """添加页码：四号宋体，—1— 格式，单页居右、双页居左。
+    skip_first=True 时启用首页不同，首页不显示页码（红头文件标准）。"""
     # 启用奇偶页不同
     docSettings = doc.settings.element
     if docSettings.find(qn('w:evenAndOddHeaders')) is None:
         docSettings.append(parse_xml(f'<w:evenAndOddHeaders {nsdecls("w")}/>'))
+    # 启用首页不同（红头文件首页不显示页码）
+    if skip_first:
+        sectPr = doc.sections[0]._sectPr
+        if sectPr.find(qn('w:titlePg')) is None:
+            sectPr.append(parse_xml(f'<w:titlePg {nsdecls("w")}/>'))
 
     # 清理所有 section 的 footer
     for section in doc.sections:
@@ -354,20 +438,30 @@ def split_heading_and_body(text, level):
 
 def parse_and_add_content(doc, content):
     lines = content.split('\n')
-    for line in lines:
-        stripped = line.strip()
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
         if not stripped:
+            i += 1
             continue
         att_match = ATTACHMENT_PATTERN.match(stripped)
         if att_match:
-            att_text = att_match.group(1).strip()
-            add_attachment(doc, att_text if att_text else '（见附件）')
+            att_lines, next_i = _parse_attachment_lines(lines, i)
+            first_content = ATTACHMENT_PATTERN.match(att_lines[0]).group(1).strip()
+            parsed = _parse_attachment_content(first_content)
+            if len(att_lines) > 1:
+                for extra in att_lines[1:]:
+                    parsed.append(extra.strip())
+            add_attachment_block(doc, parsed)
+            i = next_i
             continue
-        level, text = detect_level(line)
+        level, text = detect_level(lines[i])
         if level is None or not text:
+            i += 1
             continue
         for part_text, part_level in split_heading_and_body(text, level):
             add_body_paragraph(doc, part_text, level=part_level)
+        i += 1
 
 
 def main():
@@ -382,6 +476,7 @@ def main():
     parser.add_argument('--cc', default='', help='抄送机关（版记中）')
     parser.add_argument('--redhead', default='', help='红头机关名称（如 XX省人民政府）')
     parser.add_argument('--doc-number', default='', help='发文字号（如 X政发〔2026〕X号）')
+    parser.add_argument('--no-page-num', action='store_true', help='不添加页码（默认添加，红头文件首页自动跳过）')
     args = parser.parse_args()
 
     content, _ = read_input(args.input)
@@ -473,7 +568,8 @@ def main():
         # 下反线
         _add_banji_para('', has_top_border=True)
 
-    add_page_number(doc)
+    if not args.no_page_num:
+        add_page_number(doc, skip_first=bool(args.redhead))
 
     out_dir = os.path.dirname(os.path.abspath(args.output))
     if out_dir:
