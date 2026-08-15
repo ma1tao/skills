@@ -8,6 +8,7 @@
 |----------|------|---------|
 | [openclaw-tts-feishu](./openclaw-tts-feishu/SKILL.md) | 将文本转换为语音并发送到飞书（目前支持 MiMo TTS 和多种方言风格） | `openclaw-tts-feishu/SKILL.md` |
 | [gongwenformat-pro](./gongwenformat-pro/SKILL.md) | 党政机关公文标准排版 Pro（GB/T 9704-2012）：将 Markdown/文本转为国标排版的 Word（.docx） | `gongwenformat-pro/SKILL.md` |
+| [windows-disk-space-auditor](./windows-disk-space-auditor/SKILL.md) | Windows 磁盘空间审计：只读扫描 C/任意盘符，生成独立 HTML 仪表盘 + JSON 报告，含分级清理建议与安全防护 | `windows-disk-space-auditor/SKILL.md` |
 
 ---
 
