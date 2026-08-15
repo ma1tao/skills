@@ -1,0 +1,4 @@
+interface:
+  display_name: "Windows C 盘空间分析"
+  short_description: "扫描 Windows 磁盘占用并生成清理建议与 HTML 报告"
+  default_prompt: "使用 $windows-disk-space-auditor 分析 C 盘占用，生成 HTML 报告并告诉我哪些内容可以安全清理。"

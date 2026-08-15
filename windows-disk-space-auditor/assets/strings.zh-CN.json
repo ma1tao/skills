@@ -1,0 +1,70 @@
+{
+  "empty_cleanup": "没有检测到常见清理候选项。",
+  "risk": {
+    "safe": "通常可清理",
+    "caution": "清理前确认",
+    "protected": "禁止手动删除"
+  },
+  "scan_quality_ok": "扫描质量：未记录访问限制。",
+  "scan_limitations": "扫描限制",
+  "warnings": {
+    "unreadable": "{0} 中有 {1} 个项目无法读取，统计值可能偏低。",
+    "profile_unreadable": "当前用户目录中有 {0} 个项目无法读取，统计值可能偏低。",
+    "system_file": "无法读取系统文件：{0}。",
+    "not_admin": "本次扫描未获得 Windows 管理员令牌，受保护目录可能被低估；如需更高精度，请在 UAC 批准后以管理员身份重新执行同一只读扫描。",
+    "isolated_profile": "检测到 Codex 隔离用户目录。该结果不代表真实用户数据；请在用户批准后退出文件沙箱重扫，必要时通过 -UserProfilePath 指定真实配置文件。",
+    "logical_sizes": "目录统计是逻辑文件大小。WinSxS 等 Windows 硬链接可能被重复计数，因此不能把各目录行直接相加来估算物理占用。"
+  },
+  "categories": {
+    "windows": "Windows 目录（逻辑大小）",
+    "profile": "当前用户目录",
+    "program_files_x86": "Program Files (x86)",
+    "program_data": "ProgramData 公共数据",
+    "program_files": "Program Files",
+    "root_system": "盘符根目录系统文件",
+    "recycle_bin": "回收站"
+  },
+  "cleanup": {
+    "recycle_bin": {
+      "name": "回收站",
+      "method": "先检查是否仍需恢复文件，再从桌面回收站执行“清空回收站”。"
+    },
+    "temp": {
+      "name": "用户临时文件",
+      "method": "关闭应用后，通过“设置 > 系统 > 存储 > 临时文件”清理；跳过正在使用的文件。"
+    },
+    "windows_update": {
+      "name": "Windows 更新下载缓存",
+      "method": "通过“设置 > 系统 > 存储 > 临时文件 > Windows 更新清理”处理，不要手动删除组件服务目录。"
+    },
+    "crash_dumps": {
+      "name": "崩溃转储",
+      "method": "仅在不需要排查崩溃或提交支持工单时清理，Windows 可以重新生成。"
+    },
+    "user_cache": {
+      "name": "通用用户缓存",
+      "method": "先确认所属工具；通常可以重建，但之后可能需要重新下载。"
+    },
+    "gradle": {
+      "name": "Gradle 数据",
+      "method": "不要删除整个 .gradle；关闭 IDE 后仅使用 Gradle 支持的缓存清理方式，依赖可能重新下载。"
+    },
+    "playwright": {
+      "name": "Playwright 浏览器",
+      "method": "使用 Playwright 工具管理，或仅在没有自动化项目依赖这些浏览器时删除。"
+    },
+    "downloads": {
+      "name": "下载目录",
+      "method": "逐项检查大文件；有价值的文件应先移动或备份。"
+    }
+  },
+  "status": {
+    "healthy": "状态健康",
+    "warning": "空间偏低",
+    "critical": "空间严重不足"
+  },
+  "permission": {
+    "admin": "管理员只读扫描",
+    "standard": "标准权限只读扫描"
+  }
+}
